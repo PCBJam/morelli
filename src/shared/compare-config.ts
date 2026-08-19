@@ -9,6 +9,17 @@
 /** pixelmatch per-pixel settings — 0.1 YIQ threshold, AA pixels detected and ignored. */
 export const PIXELMATCH = { threshold: 0.1, includeAA: false } as const;
 
+/** Colour pixelmatch paints a real (non-AA) diff pixel with — the mask readback keys on this. */
+export const DIFF_COLOR: [number, number, number] = [255, 0, 0];
+
+/** Connected-component clustering ("where to look" boxes) — same knobs as CI's Discord triptych. */
+export const CLUSTER = {
+    dilate: 2, // grow the mask so fragmented glyph pixels merge into one box
+    minBoxArea: 16, // drop specks smaller than this (px²)
+    maxBoxes: 6, // draw at most this many (largest-first) red boxes
+    boxColor: [255, 0, 0] as [number, number, number],
+} as const;
+
 export type EngineFloor = { changedRatio: number; meanChannelGuard: number };
 
 /** Per-engine verdict floors: CHANGED iff the AA-excluded changed-pixel ratio exceeds changedRatio. */

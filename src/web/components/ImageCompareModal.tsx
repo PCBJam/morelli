@@ -6,7 +6,7 @@ import { entryId } from '../../shared/schemas';
 import type { Pipeline } from '../../shared/schemas';
 import type { DiffResult } from '../diff/diff-client';
 
-type Tab = 'side-by-side' | 'slider' | 'diff';
+type Tab = 'side-by-side' | 'slider' | 'boxes' | 'heatmap';
 
 export function ImageCompareModal({
     item,
@@ -35,14 +35,42 @@ export function ImageCompareModal({
         return () => window.removeEventListener('keydown', onKey);
     }, [onClose]);
 
-    const diffCanvas = useRef<HTMLCanvasElement>(null);
+    // Heatmap = pixelmatch's output image (dimmed grayscale + red changed + yellow AA)
+    // — the same panel the CI Discord triptych shows.
+    const heatmapCanvas = useRef<HTMLCanvasElement>(null);
     useEffect(() => {
-        if (tab !== 'diff' || !diff?.diffBitmap || !diffCanvas.current) return;
-        const canvas = diffCanvas.current;
+        if (tab !== 'heatmap' || !diff?.diffBitmap || !heatmapCanvas.current) return;
+        const canvas = heatmapCanvas.current;
         canvas.width = diff.width;
         canvas.height = diff.height;
         canvas.getContext('2d')?.drawImage(diff.diffBitmap, 0, 0);
     }, [tab, diff]);
+
+    // Boxes = this run's render with CI's red "where to look" cluster rectangles.
+    const boxesCanvas = useRef<HTMLCanvasElement>(null);
+    useEffect(() => {
+        if (tab !== 'boxes' || !diff || !runUrl || !boxesCanvas.current) return;
+        const canvas = boxesCanvas.current;
+        let cancelled = false;
+        const img = new Image();
+        img.onload = () => {
+            if (cancelled) return;
+            canvas.width = img.naturalWidth;
+            canvas.height = img.naturalHeight;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) return;
+            ctx.drawImage(img, 0, 0);
+            ctx.strokeStyle = 'rgb(255, 0, 0)';
+            ctx.lineWidth = 2;
+            for (const box of diff.boxes) {
+                ctx.strokeRect(box.x + 1, box.y + 1, Math.max(box.width - 2, 1), Math.max(box.height - 2, 1));
+            }
+        };
+        img.src = runUrl;
+        return () => {
+            cancelled = true;
+        };
+    }, [tab, diff, runUrl]);
 
     const tabBtn = (t: Tab, label: string, enabled: boolean) => (
         <button
@@ -69,7 +97,8 @@ export function ImageCompareModal({
                     <div className="ml-auto flex gap-1">
                         {tabBtn('side-by-side', 'Side by side', true)}
                         {tabBtn('slider', 'Slider', both)}
-                        {tabBtn('diff', 'Diff', diff?.diffBitmap != null)}
+                        {tabBtn('boxes', diff && diff.boxes.length > 0 ? `Boxes (${diff.boxes.length})` : 'Boxes', (diff?.boxes.length ?? 0) > 0 && runUrl !== null)}
+                        {tabBtn('heatmap', 'Heatmap', diff?.diffBitmap != null)}
                     </div>
                     <button onClick={onClose} className="rounded border border-zinc-700 px-2 py-1 text-sm text-zinc-300 hover:bg-zinc-800">
                         ✕
@@ -116,9 +145,15 @@ export function ImageCompareModal({
                         </div>
                     )}
 
-                    {tab === 'diff' && (
+                    {tab === 'boxes' && (
+                        <div className="bg-checker rounded">
+                            <canvas ref={boxesCanvas} className="w-full" />
+                        </div>
+                    )}
+
+                    {tab === 'heatmap' && (
                         <div className="rounded bg-black">
-                            <canvas ref={diffCanvas} className="w-full" />
+                            <canvas ref={heatmapCanvas} className="w-full" />
                         </div>
                     )}
                 </div>
