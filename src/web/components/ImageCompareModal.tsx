@@ -136,9 +136,15 @@ export function ImageCompareModal({
                             <input type="range" min={0} max={100} value={slider} onChange={(e) => setSlider(Number(e.target.value))} className="w-full" />
                             <div className="bg-checker relative overflow-hidden rounded">
                                 <img src={baselineUrl} alt="baseline" className="block w-full" />
-                                <div className="absolute inset-0 overflow-hidden border-r-2 border-emerald-400" style={{ width: `${slider}%` }}>
-                                    <img src={runUrl} alt="run" className="block w-full max-w-none" style={{ width: '100%' }} />
-                                </div>
+                                {/* Full-size overlay clipped from the right — keeps both images
+                                    pixel-aligned; the slider only reveals, never resizes. */}
+                                <img
+                                    src={runUrl}
+                                    alt="run"
+                                    className="absolute left-0 top-0 block w-full"
+                                    style={{ clipPath: `inset(0 ${100 - slider}% 0 0)` }}
+                                />
+                                <div className="absolute bottom-0 top-0 w-0.5 bg-emerald-400" style={{ left: `${slider}%` }} />
                                 <span className="absolute left-2 top-2 rounded bg-black/60 px-1.5 py-0.5 text-xs text-emerald-300">run</span>
                                 <span className="absolute right-2 top-2 rounded bg-black/60 px-1.5 py-0.5 text-xs text-zinc-300">baseline</span>
                             </div>
