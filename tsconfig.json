@@ -1,0 +1,6 @@
+{
+  // Solution-style config for editors; `pnpm typecheck` runs the two real
+  // projects below (worker+scripts vs web need conflicting lib/type sets).
+  "files": [],
+  "references": [{ "path": "./tsconfig.worker.json" }, { "path": "./tsconfig.web.json" }]
+}

@@ -1,0 +1,42 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+
+  // Staging-only Worker on the STAGING Cloudflare account (deploy.sh pins the
+  // account id and refuses anything else). There is deliberately no production
+  // environment yet.
+  "name": "pcbjam-morelli-staging",
+  "main": "src/worker/index.ts",
+  "compatibility_date": "2026-07-27",
+
+  // Staging convention (see pcbjam-private/STAGING.md): reachable only on the
+  // workers.dev subdomain, no preview URLs, no custom domain.
+  "workers_dev": true,
+  "preview_urls": false,
+  "observability": { "enabled": true },
+
+  // Single-Worker app: the SPA is served from ./dist as static assets; only
+  // /api/* invokes the Worker (Hono).
+  "assets": {
+    "directory": "./dist",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+
+  "dev": { "port": 8787 },
+
+  // IMPORTANT: the screenshot bucket (pcbjam-ci-screenshots) lives on the PROD
+  // Cloudflare account, this Worker on the STAGING one — a native r2_buckets
+  // binding is impossible. All bucket access goes over the S3 API (aws4fetch)
+  // with the keypair provided as secrets. Do not "simplify" this to a binding.
+  "vars": {
+    "SCREENSHOTS_S3_BUCKET": "pcbjam-ci-screenshots",
+    // Prefix under which baseline manifests live. .dev.vars overrides this to
+    // "baselines-dev/" so local promotes can never touch the real baselines.
+    "BASELINES_PREFIX": "baselines/"
+  }
+  // Secrets (via `wrangler deploy --secrets-file`, see deploy.sh — or .dev.vars
+  // locally): SCREENSHOTS_S3_ENDPOINT, SCREENSHOTS_S3_ACCESS_KEY_ID,
+  // SCREENSHOTS_S3_SECRET_ACCESS_KEY, GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET,
+  // SESSION_SECRET, ALLOWED_EMAILS, DISCORD_WEBHOOK_URL (optional),
+  // PUBLIC_ORIGIN (dev only — the vite origin the OAuth callback runs behind).
+}

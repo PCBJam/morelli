@@ -1,0 +1,4 @@
+# Staging must never be indexed. Scoped to the exact staging origin so the rule
+# is inert if these assets are ever served elsewhere.
+https://pcbjam-morelli-staging.pcbjam-staging.workers.dev/*
+  X-Robots-Tag: noindex, nofollow

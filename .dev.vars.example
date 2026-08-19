@@ -1,0 +1,31 @@
+# Local dev secrets for `pnpm dev:worker` (wrangler dev). Copy to .dev.vars
+# (gitignored) and fill in. NEVER commit real values.
+
+# S3 keypair for the pcbjam-ci-screenshots bucket (prod CF account). A dev
+# read-write keypair works — the same one the monorepo tests/.env files hold.
+# Endpoint form: https://<prod-account-id>.r2.cloudflarestorage.com
+SCREENSHOTS_S3_ENDPOINT=
+SCREENSHOTS_S3_ACCESS_KEY_ID=
+SCREENSHOTS_S3_SECRET_ACCESS_KEY=
+
+# DEV SAFETY: local promotes write to baselines-dev/, never the real
+# baselines/. Seed it with:
+#   pnpm seed -- --pipeline pcbjam --prefix baselines-dev/ --from <path>/screenshot-manifest.json --env-file <path>/tests/.env
+BASELINES_PREFIX=baselines-dev/
+
+# Dev GitHub OAuth app (github.com/settings/developers → OAuth Apps).
+# Callback URL: http://localhost:5173/api/auth/callback/github
+GITHUB_CLIENT_ID=
+GITHUB_CLIENT_SECRET=
+
+# Any long random string (openssl rand -hex 32).
+SESSION_SECRET=
+
+# Comma-separated GitHub-verified emails allowed to sign in.
+ALLOWED_EMAILS=
+
+# The vite dev origin — the OAuth flow runs behind vite's /api proxy.
+PUBLIC_ORIGIN=http://localhost:5173
+
+# Optional: Discord webhook for promote notifications. Leave empty in dev.
+DISCORD_WEBHOOK_URL=

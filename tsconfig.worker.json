@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "lib": ["ES2022"],
+    // node types for scripts/ (tsx-run) and vitest; workers-types for src/worker.
+    "types": ["node", "@cloudflare/workers-types"],
+    "outDir": "dist/.tsc-worker"
+  },
+  "include": ["src/worker/**/*.ts", "src/shared/**/*.ts", "src/test/**/*.ts", "scripts/**/*.ts"]
+}

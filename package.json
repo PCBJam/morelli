@@ -1,0 +1,49 @@
+{
+  "name": "morelli",
+  "private": true,
+  "version": "0.1.0",
+  "description": "PCBJam screenshot review & promotion app — browse CI runs, compare against baselines, promote from the UI. R2 is the source of truth.",
+  "type": "module",
+  "packageManager": "pnpm@10.33.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["esbuild", "workerd"]
+  },
+  "scripts": {
+    "dev": "vite",
+    "dev:worker": "mkdir -p dist && wrangler dev",
+    "build": "pnpm run typecheck && vite build",
+    "typecheck": "tsc -p tsconfig.worker.json && tsc -p tsconfig.web.json",
+    "test": "vitest run",
+    "deploy": "./deploy.sh",
+    "seed": "tsx scripts/seed-baselines.ts",
+    "spike": "tsx scripts/spike-r2.ts"
+  },
+  "dependencies": {
+    "@tanstack/react-query": "^5.59.0",
+    "aws4fetch": "^1.0.20",
+    "hono": "^4.12.25",
+    "pixelmatch": "^5.3.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.28.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260101.0",
+    "@types/node": "^22.10.0",
+    "@types/pixelmatch": "^5.2.6",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.15",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.5",
+    "vitest": "^3.0.0",
+    "wrangler": "^4.99.0"
+  }
+}
