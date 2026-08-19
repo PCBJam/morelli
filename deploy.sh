@@ -30,7 +30,9 @@ grep -Fq "\"name\": \"$WORKER_NAME\"" wrangler.jsonc || fail "wrangler.jsonc doe
 export CLOUDFLARE_ACCOUNT_ID="$STAGING_ACCOUNT_ID"
 unset CLOUDFLARE_ENV
 WRANGLER="pnpm exec wrangler"
-$WRANGLER whoami 2>/dev/null | grep -Fq "$STAGING_ACCOUNT_ID" \
+# NB: with CLOUDFLARE_ACCOUNT_ID exported, wrangler prints the whoami table to
+# stderr — grep both streams.
+$WRANGLER whoami 2>&1 | grep -Fq "$STAGING_ACCOUNT_ID" \
     || fail "wrangler is not authenticated against the staging account ($STAGING_ACCOUNT_ID) — run 'pnpm exec wrangler login' or set CLOUDFLARE_API_TOKEN"
 
 # --- build -----------------------------------------------------------------
