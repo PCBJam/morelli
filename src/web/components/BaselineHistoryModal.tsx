@@ -49,7 +49,7 @@ export function BaselineHistoryModal({ pipeline, entry, onClose }: { pipeline: P
             compareDiffRef.current = null;
         }
         setCompare({ version, diff: null });
-        computeDiff(imageUrl(casKey(version.sha256)), imageUrl(casKey(entry.sha256)))
+        computeDiff(imageUrl(casKey(version.sha256)), imageUrl(casKey(entry.sha256)), `${version.sha256}:${entry.sha256}`)
             .then((d) => {
                 setCompare((c) => {
                     if (!c || c.version !== version) {

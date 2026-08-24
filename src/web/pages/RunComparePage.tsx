@@ -117,7 +117,8 @@ export function RunComparePage() {
             const id = entryId(item);
             if (item.status !== 'needs-diff' || requested.current.has(id) || !item.baselineSha) continue;
             requested.current.add(id);
-            computeDiff(imageUrl(casKey(item.baselineSha)), imageUrl(runImageKey(p, runId, item.engine, item.name)))
+            // Content-addressed cache key: any promote/re-run changes a sha → miss.
+            computeDiff(imageUrl(casKey(item.baselineSha)), imageUrl(runImageKey(p, runId, item.engine, item.name)), `${item.baselineSha}:${item.runSha}`)
                 .then((r) => putDiff(id, r))
                 .catch(() => putDiff(id, 'error'));
         }
@@ -130,25 +131,29 @@ export function RunComparePage() {
     // Sub-0.01% diffs are "fine" — the default bulk selection skips them.
     const worthPromoting = useMemo(() => promotable.filter((i) => !isNegligible(i, diffs[entryId(i)])), [promotable, diffs]);
     const negligibleCount = promotable.length - worthPromoting.length;
+    const diffable = useMemo(() => interesting.filter((i) => i.status === 'needs-diff' && i.baselineSha), [interesting]);
+    const pendingDiffs = diffable.filter((i) => diffs[entryId(i)] === undefined).length;
 
-    // Sort. Changed modes partition: known metrics sort by ratio (added/removed
-    // pin as 1 instantly); pending/error items form a stable tail in the
-    // server's (engine, name) order — each finished diff moves exactly one item
-    // into place instead of the whole grid reshuffling.
+    // Sort. The changed modes apply only once every diff is known — reordering
+    // while results stream in made the grid jump around; until then the cards
+    // stay in the server's stable (engine, name) order behind a progress bar.
+    // On a cache-warm revisit pendingDiffs collapses immediately, so the sort
+    // is effectively instant.
     const sorted = useMemo(() => {
         const items = [...interesting];
         if (sortMode === 'name-asc') return items.sort(cmpId);
         if (sortMode === 'name-desc') return items.sort((a, b) => -cmpId(a, b));
+        if (pendingDiffs > 0) return items; // stable server order while computing
         const known = items.filter((i) => changeMetric(i, diffs[entryId(i)]) !== null);
-        const pending = items.filter((i) => changeMetric(i, diffs[entryId(i)]) === null);
+        const rest = items.filter((i) => changeMetric(i, diffs[entryId(i)]) === null); // diff errors
         const dir = sortMode === 'most-changed' ? -1 : 1;
         known.sort((a, b) => {
             const ma = changeMetric(a, diffs[entryId(a)])!;
             const mb = changeMetric(b, diffs[entryId(b)])!;
             return ma !== mb ? dir * (ma - mb) : cmpId(a, b);
         });
-        return [...known, ...pending];
-    }, [interesting, diffs, sortMode]);
+        return [...known, ...rest];
+    }, [interesting, diffs, sortMode, pendingDiffs]);
 
     if (!p) return <p className="text-zinc-500 dark:text-zinc-400">Unknown pipeline.</p>;
     if (detail.isPending) return <p className="text-zinc-500 dark:text-zinc-400">Loading run…</p>;
@@ -277,6 +282,17 @@ export function RunComparePage() {
                         <span className="text-emerald-600 dark:text-emerald-400"> · {negligibleCount} ≈ identical (≤0.01%)</span>
                     )}
                 </span>
+                {pendingDiffs > 0 && (
+                    <span className="flex items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400" title="Sorting applies when comparison finishes">
+                        <span className="h-1.5 w-24 overflow-hidden rounded bg-zinc-200 dark:bg-zinc-800">
+                            <span
+                                className="block h-full bg-emerald-500 transition-[width] duration-300"
+                                style={{ width: `${Math.round(((diffable.length - pendingDiffs) / Math.max(diffable.length, 1)) * 100)}%` }}
+                            />
+                        </span>
+                        comparing {diffable.length - pendingDiffs}/{diffable.length}…
+                    </span>
+                )}
                 <div className="flex overflow-hidden rounded border border-zinc-300 dark:border-zinc-700" title="Right image of each card">
                     {segBtn('heatmap', 'Heatmap')}
                     {segBtn('boxes', 'Boxes')}
