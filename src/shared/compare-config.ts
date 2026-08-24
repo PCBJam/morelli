@@ -20,6 +20,13 @@ export const CLUSTER = {
     boxColor: [255, 0, 0] as [number, number, number],
 } as const;
 
+/**
+ * Diffs at or below this changed-pixel ratio (0.01%) are treated as noise:
+ * green "≈ identical" chip, excluded from the default bulk selection. Team
+ * decision 2026-08-24 — well under the CI verdict floor (0.5%).
+ */
+export const NEGLIGIBLE_RATIO = 0.0001;
+
 export type EngineFloor = { changedRatio: number; meanChannelGuard: number };
 
 /** Per-engine verdict floors: CHANGED iff the AA-excluded changed-pixel ratio exceeds changedRatio. */

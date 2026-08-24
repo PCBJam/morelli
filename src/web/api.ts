@@ -41,6 +41,9 @@ export type RunListItem = {
     uploadedAt: string;
     e2e: 'pass' | 'fail' | 'unknown';
     screenshotCount: number;
+    /** Drift vs the CURRENT baselines (drops to zero after promoting); null when baselines aren't seeded. */
+    live: { changed: number; added: number; removed: number } | null;
+    /** The CI-time compare summary embedded at upload — a historical snapshot, unaffected by promotes. */
     reportSummary: { changed: number; added: number; removed: number; driftLikely: boolean } | null;
 };
 

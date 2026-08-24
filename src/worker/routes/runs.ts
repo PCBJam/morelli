@@ -14,6 +14,7 @@ import { baselinesManifestKey, runMetaKey, runPrefix } from '../../shared/keys';
 import { entryId, isPipeline, parseManifest, parseRunMeta } from '../../shared/schemas';
 import type { Manifest, ManifestEntry, Pipeline, RunMeta } from '../../shared/schemas';
 import { PIPELINES } from '../../shared/schemas';
+import { baselineShaMap, liveCounts } from '../live-counts';
 
 export const runsRoutes = new Hono<AppEnv>();
 
@@ -60,6 +61,11 @@ runsRoutes.get('/pipelines/:p/runs', async (c) => {
     const offset = Math.max(Number(c.req.query('cursor') ?? 0) || 0, 0);
 
     const s3 = s3FromEnv(c.env);
+    // One manifest read per page: the badge counts are LIVE (vs the current
+    // baselines) — unlike meta.json's embedded CI-time report, they collapse
+    // to zero once a run's changes are promoted.
+    const manifest = await loadManifest(s3, c.env.BASELINES_PREFIX, p).catch(() => null);
+    const shaById = baselineShaMap(manifest?.manifest.screenshots ?? []);
     const ids = await listAllRunIds(s3, p);
     const page = ids.slice(offset, offset + limit);
 
@@ -87,6 +93,7 @@ runsRoutes.get('/pipelines/:p/runs', async (c) => {
                     uploadedAt: meta.uploadedAt,
                     e2e: meta.e2e,
                     screenshotCount: meta.screenshots.length,
+                    live: manifest ? liveCounts(meta.screenshots, shaById) : null,
                     reportSummary: meta.report
                         ? { changed: meta.report.changed.length, added: meta.report.added.length, removed: meta.report.removed.length, driftLikely: meta.report.driftLikely }
                         : null,

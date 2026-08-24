@@ -56,10 +56,22 @@ export function RunsPage() {
                             <span className="min-w-0 flex-1 truncate text-sm text-zinc-700 dark:text-zinc-300">
                                 {run.commitSubject || run.commit.slice(0, 10)}
                             </span>
-                            {run.reportSummary && run.reportSummary.changed + run.reportSummary.added + run.reportSummary.removed > 0 && (
-                                <span className="rounded border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-xs text-amber-700 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-300">
-                                    Δ {run.reportSummary.changed} changed · {run.reportSummary.added} added · {run.reportSummary.removed} removed
-                                    {run.reportSummary.driftLikely ? ' · drift?' : ''}
+                            {run.live && (
+                                <span
+                                    title={
+                                        run.reportSummary
+                                            ? `At CI time: ${run.reportSummary.changed} changed · ${run.reportSummary.added} added · ${run.reportSummary.removed} removed${run.reportSummary.driftLikely ? ' · drift?' : ''}`
+                                            : 'vs current baselines'
+                                    }
+                                    className={
+                                        run.live.changed + run.live.added + run.live.removed === 0
+                                            ? 'rounded border border-emerald-300 bg-emerald-50 px-1.5 py-0.5 text-xs text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-300'
+                                            : 'rounded border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-xs text-amber-700 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-300'
+                                    }
+                                >
+                                    {run.live.changed + run.live.added + run.live.removed === 0
+                                        ? '✓ matches baselines'
+                                        : `Δ ${run.live.changed} changed · ${run.live.added} added · ${run.live.removed} removed`}
                                 </span>
                             )}
                             <span className="text-xs text-zinc-500">{run.screenshotCount} shots</span>

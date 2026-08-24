@@ -6,7 +6,7 @@ import type { BlobsResult, CommitResult, DiffPlanItem, RunDetail } from '../api'
 import { casKey, runImageKey } from '../../shared/keys';
 import { entryId, isPipeline } from '../../shared/schemas';
 import type { Pipeline } from '../../shared/schemas';
-import { floorFor } from '../../shared/compare-config';
+import { NEGLIGIBLE_RATIO, floorFor } from '../../shared/compare-config';
 import { computeDiff, revokeDiff } from '../diff/diff-client';
 import type { DiffResult } from '../diff/diff-client';
 import { ImageCompareModal } from '../components/ImageCompareModal';
@@ -26,6 +26,11 @@ function cmpId(a: DiffPlanItem, b: DiffPlanItem): number {
     const ia = entryId(a);
     const ib = entryId(b);
     return ia < ib ? -1 : ia > ib ? 1 : 0;
+}
+
+/** Sub-noise-floor diff (≤0.01%): treated as fine — green chip, excluded from the default bulk selection. */
+function isNegligible(item: DiffPlanItem, diff: DiffResult | 'error' | undefined): boolean {
+    return item.status === 'needs-diff' && typeof diff === 'object' && diff !== undefined && diff.dimsMatch && diff.changedRatio <= NEGLIGIBLE_RATIO;
 }
 
 /** Change metric for sorting: added/removed count as full change; null = not yet known. */
@@ -54,6 +59,7 @@ function StatusChip({ item, diff }: { item: DiffPlanItem; diff: DiffResult | 'er
     const floor = floorFor(item.engine).changedRatio;
     const pct = (diff.changedRatio * 100).toFixed(diff.changedRatio > 0 && diff.changedRatio < 0.001 ? 4 : 2);
     if (!diff.dimsMatch) return chip(chipClass.orange, 'size changed');
+    if (diff.changedRatio <= NEGLIGIBLE_RATIO) return chip(chipClass.green, `≈ identical ${pct}%`);
     return diff.changedRatio > floor ? chip(chipClass.orange, `changed ${pct}%`) : chip(chipClass.yellow, `≈ unchanged ${pct}%`);
 }
 
@@ -121,6 +127,9 @@ export function RunComparePage() {
     const promotable = useMemo(() => plan.filter((i) => i.status === 'added' || i.status === 'needs-diff'), [plan]);
     const interesting = useMemo(() => plan.filter((i) => i.status !== 'same-sha'), [plan]);
     const identicalCount = plan.length - interesting.length;
+    // Sub-0.01% diffs are "fine" — the default bulk selection skips them.
+    const worthPromoting = useMemo(() => promotable.filter((i) => !isNegligible(i, diffs[entryId(i)])), [promotable, diffs]);
+    const negligibleCount = promotable.length - worthPromoting.length;
 
     // Sort. Changed modes partition: known metrics sort by ratio (added/removed
     // pin as 1 instantly); pending/error items form a stable tail in the
@@ -196,6 +205,7 @@ export function RunComparePage() {
             setDiffs({});
             await Promise.all([
                 qc.invalidateQueries({ queryKey: ['run', p, runId] }),
+                qc.invalidateQueries({ queryKey: ['runs', p] }), // live badges collapse after a promote
                 qc.invalidateQueries({ queryKey: ['baselines', p] }),
                 qc.invalidateQueries({ queryKey: ['pipelines'] }),
             ]);
@@ -263,6 +273,9 @@ export function RunComparePage() {
             <div className="flex flex-wrap items-center gap-3 rounded border border-zinc-200 bg-white p-3 text-sm dark:border-zinc-800 dark:bg-zinc-900/50">
                 <span className="text-zinc-500 dark:text-zinc-400">
                     {plan.length} screenshots · {identicalCount} identical · {interesting.length} to review
+                    {negligibleCount > 0 && (
+                        <span className="text-emerald-600 dark:text-emerald-400"> · {negligibleCount} ≈ identical (≤0.01%)</span>
+                    )}
                 </span>
                 <div className="flex overflow-hidden rounded border border-zinc-300 dark:border-zinc-700" title="Right image of each card">
                     {segBtn('heatmap', 'Heatmap')}
@@ -281,10 +294,11 @@ export function RunComparePage() {
                 </select>
                 <div className="ml-auto flex items-center gap-2">
                     <button
-                        onClick={() => setSelected(new Set(promotable.map(entryId)))}
+                        onClick={() => setSelected(new Set(worthPromoting.map(entryId)))}
+                        title={negligibleCount > 0 ? `${negligibleCount} ≈ identical (≤0.01%) screenshots are skipped` : undefined}
                         className="rounded border border-zinc-300 px-2 py-1 text-xs hover:bg-zinc-200 dark:border-zinc-700 dark:hover:bg-zinc-800"
                     >
-                        Select all changed + added ({promotable.length})
+                        Select all changed + added ({worthPromoting.length})
                     </button>
                     <button
                         onClick={() => {
