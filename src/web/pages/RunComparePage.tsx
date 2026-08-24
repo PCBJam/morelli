@@ -49,6 +49,34 @@ const chipClass = {
     muted: 'border-zinc-300 bg-zinc-100 text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-500',
 } as const;
 
+/** Pulsing placeholder card shown while the run data / diffs aren't ready. */
+function SkeletonCard() {
+    return (
+        <div className="animate-pulse rounded border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900/40">
+            <div className="mb-2 flex items-center gap-2">
+                <div className="h-4 w-4 rounded bg-zinc-200 dark:bg-zinc-800" />
+                <div className="h-3 flex-1 rounded bg-zinc-200 dark:bg-zinc-800" />
+                <div className="h-4 w-20 rounded bg-zinc-200 dark:bg-zinc-800" />
+            </div>
+            <div className="flex gap-1">
+                <div className="h-32 flex-1 rounded bg-zinc-100 dark:bg-zinc-800/60" />
+                <div className="h-32 flex-1 rounded bg-zinc-100 dark:bg-zinc-800/60" />
+            </div>
+            <div className="mt-2 h-2.5 w-2/3 rounded bg-zinc-100 dark:bg-zinc-800/60" />
+        </div>
+    );
+}
+
+function SkeletonGrid({ count }: { count: number }) {
+    return (
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {Array.from({ length: count }, (_, i) => (
+                <SkeletonCard key={i} />
+            ))}
+        </div>
+    );
+}
+
 function StatusChip({ item, diff }: { item: DiffPlanItem; diff: DiffResult | 'error' | undefined }) {
     const chip = (cls: string, text: string) => <span className={`rounded border px-1.5 py-0.5 text-xs ${cls}`}>{text}</span>;
     if (item.status === 'added') return chip(chipClass.green, 'added');
@@ -156,7 +184,14 @@ export function RunComparePage() {
     }, [interesting, diffs, sortMode, pendingDiffs]);
 
     if (!p) return <p className="text-zinc-500 dark:text-zinc-400">Unknown pipeline.</p>;
-    if (detail.isPending) return <p className="text-zinc-500 dark:text-zinc-400">Loading run…</p>;
+    if (detail.isPending)
+        return (
+            <div className="space-y-4">
+                <div className="h-6 w-72 animate-pulse rounded bg-zinc-200 dark:bg-zinc-800" />
+                <div className="h-12 animate-pulse rounded border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900/50" />
+                <SkeletonGrid count={9} />
+            </div>
+        );
     if (detail.isError) return <p className="text-red-600 dark:text-red-400">Failed to load run: {(detail.error as Error).message}</p>;
 
     const { meta, baseline } = detail.data;
@@ -345,6 +380,9 @@ export function RunComparePage() {
                 </p>
             )}
 
+            {pendingDiffs > 0 ? (
+                <SkeletonGrid count={Math.min(interesting.length, 12)} />
+            ) : (
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
                 {sorted.map((item) => {
                     const id = entryId(item);
@@ -403,6 +441,7 @@ export function RunComparePage() {
                     );
                 })}
             </div>
+            )}
 
             {interesting.length === 0 && (
                 <p className="rounded border border-zinc-200 bg-white p-4 text-sm text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900/50 dark:text-zinc-400">
