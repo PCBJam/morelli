@@ -14,7 +14,7 @@ import { baselinesManifestKey, runMetaKey, runPrefix } from '../../shared/keys';
 import { entryId, isPipeline, parseManifest, parseRunMeta } from '../../shared/schemas';
 import type { Manifest, ManifestEntry, Pipeline, RunMeta } from '../../shared/schemas';
 import { PIPELINES } from '../../shared/schemas';
-import { baselineShaMap, liveCounts } from '../live-counts';
+import { baselineShaMap, ciChangedIdSet, liveCounts } from '../live-counts';
 
 export const runsRoutes = new Hono<AppEnv>();
 
@@ -93,7 +93,7 @@ runsRoutes.get('/pipelines/:p/runs', async (c) => {
                     uploadedAt: meta.uploadedAt,
                     e2e: meta.e2e,
                     screenshotCount: meta.screenshots.length,
-                    live: manifest ? liveCounts(meta.screenshots, shaById) : null,
+                    live: manifest ? liveCounts(meta.screenshots, shaById, ciChangedIdSet(meta)) : null,
                     reportSummary: meta.report
                         ? { changed: meta.report.changed.length, added: meta.report.added.length, removed: meta.report.removed.length, driftLikely: meta.report.driftLikely }
                         : null,
