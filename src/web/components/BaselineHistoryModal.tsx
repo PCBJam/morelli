@@ -89,7 +89,21 @@ export function BaselineHistoryModal({ pipeline, entry, onClose }: { pipeline: P
                 </div>
 
                 <div className="min-h-0 flex-1 space-y-3 overflow-auto p-4">
-                    {history.isPending && <p className="text-sm text-zinc-500 dark:text-zinc-400">Loading history…</p>}
+                    {history.isPending &&
+                        [0, 1].map((i) => (
+                            <div key={i} className="flex animate-pulse gap-3 rounded border border-zinc-200 bg-white p-2 dark:border-zinc-800 dark:bg-zinc-900/40">
+                                <div className="h-28 w-48 shrink-0 rounded bg-zinc-100 dark:bg-zinc-800/60" />
+                                <div className="min-w-0 flex-1 space-y-2 py-1">
+                                    <div className="flex items-center gap-2">
+                                        <div className="h-5 w-16 rounded bg-zinc-200 dark:bg-zinc-800" />
+                                        <div className="h-3 w-32 rounded bg-zinc-100 dark:bg-zinc-800/60" />
+                                    </div>
+                                    <div className="h-3 w-40 rounded bg-zinc-100 dark:bg-zinc-800/60" />
+                                    <div className="h-3 w-28 rounded bg-zinc-100 dark:bg-zinc-800/60" />
+                                    <div className="h-3 w-52 rounded bg-zinc-100 dark:bg-zinc-800/60" />
+                                </div>
+                            </div>
+                        ))}
                     {history.isError && <p className="text-sm text-red-600 dark:text-red-400">Failed to load history: {(history.error as Error).message}</p>}
                     {history.data &&
                         history.data.versions.map((v, i) => (
