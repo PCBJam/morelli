@@ -1,12 +1,20 @@
 <!doctype html>
-<html lang="en" class="dark">
+<html lang="en">
     <head>
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <meta name="robots" content="noindex, nofollow" />
         <title>morelli · PCBJam screenshots</title>
+        <script>
+            // Set the theme class before first paint (no flash). Stored choice
+            // wins; otherwise follow the OS. ThemeToggle.tsx writes the key.
+            (function () {
+                var t = localStorage.getItem('morelli-theme');
+                document.documentElement.classList.toggle('dark', t ? t === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches);
+            })();
+        </script>
     </head>
-    <body class="bg-zinc-950 text-zinc-100">
+    <body class="bg-zinc-50 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
         <div id="root"></div>
         <script type="module" src="/src/web/main.tsx"></script>
     </body>

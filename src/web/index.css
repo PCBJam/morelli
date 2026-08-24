@@ -2,11 +2,25 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Native controls (select, checkbox, range, scrollbars) follow the class-based
+   theme only when told to. */
+:root {
+    color-scheme: light;
+}
+:root.dark {
+    color-scheme: dark;
+}
+
 /* Checkerboard behind screenshots so transparent regions read as such. */
 .bg-checker {
-    background-image: linear-gradient(45deg, #27272a 25%, transparent 25%), linear-gradient(-45deg, #27272a 25%, transparent 25%),
-        linear-gradient(45deg, transparent 75%, #27272a 75%), linear-gradient(-45deg, transparent 75%, #27272a 75%);
+    background-image: linear-gradient(45deg, #e4e4e7 25%, transparent 25%), linear-gradient(-45deg, #e4e4e7 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, #e4e4e7 75%), linear-gradient(-45deg, transparent 75%, #e4e4e7 75%);
     background-size: 16px 16px;
     background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+    background-color: #f4f4f5;
+}
+.dark .bg-checker {
+    background-image: linear-gradient(45deg, #27272a 25%, transparent 25%), linear-gradient(-45deg, #27272a 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, #27272a 75%), linear-gradient(-45deg, transparent 75%, #27272a 75%);
     background-color: #18181b;
 }

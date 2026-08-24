@@ -42,6 +42,35 @@ function dilate(mask: Uint8Array, w: number, h: number, r: number): Uint8Array {
 }
 
 /**
+ * Draw 2px rectangle outlines for each box INSIDE its bounds, mutating `data`
+ * in place — a verbatim pixel port of the CI tooling's drawBoxes (image-ops.ts)
+ * so morelli's boxes render pixel-identical to the Discord triptych.
+ */
+export function drawBoxesOnImageData(data: Uint8ClampedArray, width: number, height: number, boxes: Box[]): void {
+    const [r, g, b] = CLUSTER.boxColor;
+    const set = (x: number, y: number) => {
+        if (x < 0 || y < 0 || x >= width || y >= height) return;
+        const o = (y * width + x) * 4;
+        data[o] = r;
+        data[o + 1] = g;
+        data[o + 2] = b;
+        data[o + 3] = 255;
+    };
+    for (const box of boxes) {
+        for (let t = 0; t < 2; t++) {
+            for (let x = box.x; x < box.x + box.width; x++) {
+                set(x, box.y + t);
+                set(x, box.y + box.height - 1 - t);
+            }
+            for (let y = box.y; y < box.y + box.height; y++) {
+                set(box.x + t, y);
+                set(box.x + box.width - 1 - t, y);
+            }
+        }
+    }
+}
+
+/**
  * 8-connected connected-components over the (dilated) mask → bounding boxes,
  * largest-area first, capped at CLUSTER.maxBoxes, specks below
  * CLUSTER.minBoxArea dropped.

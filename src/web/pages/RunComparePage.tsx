@@ -7,12 +7,14 @@ import { casKey, runImageKey } from '../../shared/keys';
 import { entryId, isPipeline } from '../../shared/schemas';
 import type { Pipeline } from '../../shared/schemas';
 import { floorFor } from '../../shared/compare-config';
-import { computeDiff } from '../diff/diff-client';
+import { computeDiff, revokeDiff } from '../diff/diff-client';
 import type { DiffResult } from '../diff/diff-client';
 import { ImageCompareModal } from '../components/ImageCompareModal';
 import { ProvenanceBadge } from '../components/ProvenanceBadge';
 
 type DiffState = Record<string, DiffResult | 'error' | undefined>;
+type ViewMode = 'heatmap' | 'boxes';
+type SortMode = 'most-changed' | 'least-changed' | 'name-asc' | 'name-desc';
 
 function chunk<T>(items: T[], size: number): T[][] {
     const out: T[][] = [];
@@ -20,20 +22,39 @@ function chunk<T>(items: T[], size: number): T[][] {
     return out;
 }
 
+function cmpId(a: DiffPlanItem, b: DiffPlanItem): number {
+    const ia = entryId(a);
+    const ib = entryId(b);
+    return ia < ib ? -1 : ia > ib ? 1 : 0;
+}
+
+/** Change metric for sorting: added/removed count as full change; null = not yet known. */
+function changeMetric(item: DiffPlanItem, diff: DiffResult | 'error' | undefined): number | null {
+    if (item.status === 'added' || item.status === 'removed') return 1;
+    if (typeof diff !== 'object' || diff === undefined) return null; // pending or error
+    return diff.dimsMatch ? diff.changedRatio : 1;
+}
+
+const chipClass = {
+    green: 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-300',
+    red: 'border-red-300 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300',
+    orange: 'border-orange-300 bg-orange-50 text-orange-700 dark:border-orange-900 dark:bg-orange-950 dark:text-orange-300',
+    yellow: 'border-yellow-300 bg-yellow-50 text-yellow-700 dark:border-yellow-900 dark:bg-yellow-950 dark:text-yellow-300',
+    zinc: 'border-zinc-300 bg-zinc-100 text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400',
+    muted: 'border-zinc-300 bg-zinc-100 text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-500',
+} as const;
+
 function StatusChip({ item, diff }: { item: DiffPlanItem; diff: DiffResult | 'error' | undefined }) {
-    if (item.status === 'added') return <span className="rounded border border-emerald-900 bg-emerald-950 px-1.5 py-0.5 text-xs text-emerald-300">added</span>;
-    if (item.status === 'removed') return <span className="rounded border border-red-900 bg-red-950 px-1.5 py-0.5 text-xs text-red-300">missing in run</span>;
-    if (item.status === 'same-sha') return <span className="rounded border border-zinc-800 bg-zinc-900 px-1.5 py-0.5 text-xs text-zinc-400">identical</span>;
-    if (diff === undefined) return <span className="rounded border border-zinc-800 bg-zinc-900 px-1.5 py-0.5 text-xs text-zinc-500">diffing…</span>;
-    if (diff === 'error') return <span className="rounded border border-red-900 bg-red-950 px-1.5 py-0.5 text-xs text-red-300">diff failed</span>;
+    const chip = (cls: string, text: string) => <span className={`rounded border px-1.5 py-0.5 text-xs ${cls}`}>{text}</span>;
+    if (item.status === 'added') return chip(chipClass.green, 'added');
+    if (item.status === 'removed') return chip(chipClass.red, 'missing in run');
+    if (item.status === 'same-sha') return chip(chipClass.zinc, 'identical');
+    if (diff === undefined) return chip(chipClass.muted, 'diffing…');
+    if (diff === 'error') return chip(chipClass.red, 'diff failed');
     const floor = floorFor(item.engine).changedRatio;
     const pct = (diff.changedRatio * 100).toFixed(diff.changedRatio > 0 && diff.changedRatio < 0.001 ? 4 : 2);
-    if (!diff.dimsMatch) return <span className="rounded border border-orange-900 bg-orange-950 px-1.5 py-0.5 text-xs text-orange-300">size changed</span>;
-    return diff.changedRatio > floor ? (
-        <span className="rounded border border-orange-900 bg-orange-950 px-1.5 py-0.5 text-xs text-orange-300">changed {pct}%</span>
-    ) : (
-        <span className="rounded border border-yellow-900 bg-yellow-950 px-1.5 py-0.5 text-xs text-yellow-300">≈ unchanged {pct}%</span>
-    );
+    if (!diff.dimsMatch) return chip(chipClass.orange, 'size changed');
+    return diff.changedRatio > floor ? chip(chipClass.orange, `changed ${pct}%`) : chip(chipClass.yellow, `≈ unchanged ${pct}%`);
 }
 
 export function RunComparePage() {
@@ -49,7 +70,12 @@ export function RunComparePage() {
     });
 
     const [diffs, setDiffs] = useState<DiffState>({});
+    // Mirror of `diffs` so unmount cleanup and late arrivers can revoke object
+    // URLs without stale-closure hazards.
+    const diffsRef = useRef<DiffState>({});
     const requested = useRef(new Set<string>());
+    const [viewMode, setViewMode] = useState<ViewMode>('heatmap');
+    const [sortMode, setSortMode] = useState<SortMode>('most-changed');
     const [selected, setSelected] = useState<Set<string>>(new Set());
     const [pruneSel, setPruneSel] = useState<Set<string>>(new Set());
     const [modalItem, setModalItem] = useState<DiffPlanItem | null>(null);
@@ -57,6 +83,26 @@ export function RunComparePage() {
     const [progress, setProgress] = useState<string | null>(null);
     const [result, setResult] = useState<CommitResult | null>(null);
     const [error, setError] = useState<string | null>(null);
+
+    const putDiff = (id: string, value: DiffResult | 'error') => {
+        setDiffs((d) => {
+            const prev = d[id];
+            if (typeof prev === 'object' && prev !== undefined) revokeDiff(prev); // replace → release old URLs
+            const next = { ...d, [id]: value };
+            diffsRef.current = next;
+            return next;
+        });
+    };
+
+    const revokeAll = () => {
+        for (const v of Object.values(diffsRef.current)) {
+            if (typeof v === 'object' && v !== undefined) revokeDiff(v);
+        }
+        diffsRef.current = {};
+    };
+
+    // Release every object URL when leaving the page.
+    useEffect(() => revokeAll, []);
 
     // Kick off pixel diffs for every needs-diff item exactly once per page load.
     useEffect(() => {
@@ -66,8 +112,8 @@ export function RunComparePage() {
             if (item.status !== 'needs-diff' || requested.current.has(id) || !item.baselineSha) continue;
             requested.current.add(id);
             computeDiff(imageUrl(casKey(item.baselineSha)), imageUrl(runImageKey(p, runId, item.engine, item.name)))
-                .then((r) => setDiffs((d) => ({ ...d, [id]: r })))
-                .catch(() => setDiffs((d) => ({ ...d, [id]: 'error' })));
+                .then((r) => putDiff(id, r))
+                .catch(() => putDiff(id, 'error'));
         }
     }, [detail.data, p, runId]);
 
@@ -76,9 +122,28 @@ export function RunComparePage() {
     const interesting = useMemo(() => plan.filter((i) => i.status !== 'same-sha'), [plan]);
     const identicalCount = plan.length - interesting.length;
 
-    if (!p) return <p className="text-zinc-400">Unknown pipeline.</p>;
-    if (detail.isPending) return <p className="text-zinc-400">Loading run…</p>;
-    if (detail.isError) return <p className="text-red-400">Failed to load run: {(detail.error as Error).message}</p>;
+    // Sort. Changed modes partition: known metrics sort by ratio (added/removed
+    // pin as 1 instantly); pending/error items form a stable tail in the
+    // server's (engine, name) order — each finished diff moves exactly one item
+    // into place instead of the whole grid reshuffling.
+    const sorted = useMemo(() => {
+        const items = [...interesting];
+        if (sortMode === 'name-asc') return items.sort(cmpId);
+        if (sortMode === 'name-desc') return items.sort((a, b) => -cmpId(a, b));
+        const known = items.filter((i) => changeMetric(i, diffs[entryId(i)]) !== null);
+        const pending = items.filter((i) => changeMetric(i, diffs[entryId(i)]) === null);
+        const dir = sortMode === 'most-changed' ? -1 : 1;
+        known.sort((a, b) => {
+            const ma = changeMetric(a, diffs[entryId(a)])!;
+            const mb = changeMetric(b, diffs[entryId(b)])!;
+            return ma !== mb ? dir * (ma - mb) : cmpId(a, b);
+        });
+        return [...known, ...pending];
+    }, [interesting, diffs, sortMode]);
+
+    if (!p) return <p className="text-zinc-500 dark:text-zinc-400">Unknown pipeline.</p>;
+    if (detail.isPending) return <p className="text-zinc-500 dark:text-zinc-400">Loading run…</p>;
+    if (detail.isError) return <p className="text-red-600 dark:text-red-400">Failed to load run: {(detail.error as Error).message}</p>;
 
     const { meta, baseline } = detail.data;
 
@@ -127,6 +192,7 @@ export function RunComparePage() {
             setSelected(new Set());
             setPruneSel(new Set());
             requested.current.clear();
+            revokeAll();
             setDiffs({});
             await Promise.all([
                 qc.invalidateQueries({ queryKey: ['run', p, runId] }),
@@ -145,19 +211,41 @@ export function RunComparePage() {
         }
     };
 
+    const segBtn = (mode: ViewMode, label: string) => (
+        <button
+            key={mode}
+            onClick={() => setViewMode(mode)}
+            className={`px-2.5 py-1 text-xs font-medium ${
+                viewMode === mode
+                    ? 'bg-zinc-300 text-zinc-900 dark:bg-zinc-700 dark:text-white'
+                    : 'text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200'
+            }`}
+        >
+            {label}
+        </button>
+    );
+
+    /** The card's right panel: the selected diff rendering, falling back to the raw run capture. */
+    const rightPanelSrc = (item: DiffPlanItem, diff: DiffResult | 'error' | undefined): string | null => {
+        if (!item.runSha) return null;
+        const runSrc = imageUrl(runImageKey(p, runId, item.engine, item.name));
+        if (item.status !== 'needs-diff' || typeof diff !== 'object' || diff === undefined || !diff.dimsMatch) return runSrc;
+        return (viewMode === 'boxes' ? diff.boxesUrl : diff.heatmapUrl) ?? runSrc;
+    };
+
     return (
         <div className="space-y-4">
             <div className="flex flex-wrap items-center gap-3">
-                <Link to={`/${p}/runs`} className="text-sm text-zinc-500 hover:text-zinc-300">
+                <Link to={`/${p}/runs`} className="text-sm text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-300">
                     ← runs
                 </Link>
                 <h1 className="text-lg font-semibold">
                     Run <span className="font-mono">#{runId}</span>
                 </h1>
-                <span className="rounded bg-zinc-900 px-1.5 py-0.5 font-mono text-xs text-zinc-400">{meta.branch}</span>
-                <span className="truncate text-sm text-zinc-400">{meta.commitSubject || meta.commit.slice(0, 10)}</span>
+                <span className="rounded bg-zinc-200 px-1.5 py-0.5 font-mono text-xs text-zinc-600 dark:bg-zinc-900 dark:text-zinc-400">{meta.branch}</span>
+                <span className="truncate text-sm text-zinc-600 dark:text-zinc-400">{meta.commitSubject || meta.commit.slice(0, 10)}</span>
                 <a
-                    className="text-xs text-zinc-500 underline hover:text-zinc-300"
+                    className="text-xs text-zinc-500 underline hover:text-zinc-800 dark:hover:text-zinc-300"
                     href={`https://github.com/${meta.repo}/actions/runs/${runId}`}
                     target="_blank"
                     rel="noreferrer"
@@ -167,23 +255,44 @@ export function RunComparePage() {
             </div>
 
             {!baseline.seeded && (
-                <p className="rounded border border-amber-900 bg-amber-950/50 p-3 text-sm text-amber-300">
+                <p className="rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-700 dark:border-amber-900 dark:bg-amber-950/50 dark:text-amber-300">
                     No baseline manifest for this pipeline yet — everything shows as “added”. Seed baselines first.
                 </p>
             )}
 
-            <div className="flex flex-wrap items-center gap-2 rounded border border-zinc-800 bg-zinc-900/50 p-3 text-sm">
-                <span className="text-zinc-400">
+            <div className="flex flex-wrap items-center gap-3 rounded border border-zinc-200 bg-white p-3 text-sm dark:border-zinc-800 dark:bg-zinc-900/50">
+                <span className="text-zinc-500 dark:text-zinc-400">
                     {plan.length} screenshots · {identicalCount} identical · {interesting.length} to review
                 </span>
+                <div className="flex overflow-hidden rounded border border-zinc-300 dark:border-zinc-700" title="Right image of each card">
+                    {segBtn('heatmap', 'Heatmap')}
+                    {segBtn('boxes', 'Boxes')}
+                </div>
+                <select
+                    value={sortMode}
+                    onChange={(e) => setSortMode(e.target.value as SortMode)}
+                    className="rounded border border-zinc-300 bg-white px-2 py-1 text-xs dark:border-zinc-700 dark:bg-zinc-900"
+                    title="Sort order"
+                >
+                    <option value="most-changed">Most changed first</option>
+                    <option value="least-changed">Least changed first</option>
+                    <option value="name-asc">Name A→Z</option>
+                    <option value="name-desc">Name Z→A</option>
+                </select>
                 <div className="ml-auto flex items-center gap-2">
                     <button
                         onClick={() => setSelected(new Set(promotable.map(entryId)))}
-                        className="rounded border border-zinc-700 px-2 py-1 text-xs hover:bg-zinc-800"
+                        className="rounded border border-zinc-300 px-2 py-1 text-xs hover:bg-zinc-200 dark:border-zinc-700 dark:hover:bg-zinc-800"
                     >
                         Select all changed + added ({promotable.length})
                     </button>
-                    <button onClick={() => { setSelected(new Set()); setPruneSel(new Set()); }} className="rounded border border-zinc-700 px-2 py-1 text-xs hover:bg-zinc-800">
+                    <button
+                        onClick={() => {
+                            setSelected(new Set());
+                            setPruneSel(new Set());
+                        }}
+                        className="rounded border border-zinc-300 px-2 py-1 text-xs hover:bg-zinc-200 dark:border-zinc-700 dark:hover:bg-zinc-800"
+                    >
                         Clear
                     </button>
                     <button
@@ -196,21 +305,24 @@ export function RunComparePage() {
                 </div>
             </div>
 
-            {error && <p className="rounded border border-red-900 bg-red-950/50 p-3 text-sm text-red-300">{error}</p>}
+            {error && (
+                <p className="rounded border border-red-300 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/50 dark:text-red-300">{error}</p>
+            )}
             {result && (
-                <p className="rounded border border-emerald-900 bg-emerald-950/50 p-3 text-sm text-emerald-300">
+                <p className="rounded border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/50 dark:text-emerald-300">
                     Promoted: {result.updated} updated, {result.added} added, {result.pruned} pruned
                     {result.unchangedSkipped ? `, ${result.unchangedSkipped} identical skipped` : ''}.
                 </p>
             )}
 
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-                {interesting.map((item) => {
+                {sorted.map((item) => {
                     const id = entryId(item);
                     const diff = diffs[id];
                     const selectable = item.status === 'added' || item.status === 'needs-diff';
+                    const rightSrc = rightPanelSrc(item, diff);
                     return (
-                        <div key={id} className="rounded border border-zinc-800 bg-zinc-900/40 p-3">
+                        <div key={id} className="rounded border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900/40">
                             <div className="mb-2 flex items-center gap-2">
                                 {selectable ? (
                                     <input
@@ -229,7 +341,11 @@ export function RunComparePage() {
                                         title="Prune this baseline (screenshot no longer produced)"
                                     />
                                 )}
-                                <button onClick={() => setModalItem(item)} className="min-w-0 flex-1 truncate text-left font-mono text-xs text-zinc-300 hover:text-white" title={id}>
+                                <button
+                                    onClick={() => setModalItem(item)}
+                                    className="min-w-0 flex-1 truncate text-left font-mono text-xs text-zinc-700 hover:text-black dark:text-zinc-300 dark:hover:text-white"
+                                    title={id}
+                                >
                                     {id}
                                 </button>
                                 <StatusChip item={item} diff={diff} />
@@ -241,9 +357,9 @@ export function RunComparePage() {
                                             <img src={imageUrl(casKey(item.baselineSha))} loading="lazy" alt={`${id} baseline`} className="max-h-40 w-full object-contain" />
                                         </div>
                                     )}
-                                    {item.runSha && (
+                                    {rightSrc && (
                                         <div className="bg-checker min-w-0 flex-1 overflow-hidden rounded">
-                                            <img src={imageUrl(runImageKey(p, runId, item.engine, item.name))} loading="lazy" alt={`${id} run`} className="max-h-40 w-full object-contain" />
+                                            <img src={rightSrc} loading="lazy" alt={`${id} ${viewMode}`} className="max-h-40 w-full object-contain" />
                                         </div>
                                     )}
                                 </div>
@@ -258,13 +374,17 @@ export function RunComparePage() {
                 })}
             </div>
 
-            {interesting.length === 0 && <p className="rounded border border-zinc-800 bg-zinc-900/50 p-4 text-sm text-zinc-400">Every screenshot is byte-identical to its baseline. Nothing to review.</p>}
+            {interesting.length === 0 && (
+                <p className="rounded border border-zinc-200 bg-white p-4 text-sm text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900/50 dark:text-zinc-400">
+                    Every screenshot is byte-identical to its baseline. Nothing to review.
+                </p>
+            )}
 
             {modalItem && (
                 <ImageCompareModal
-                    item={modalItem}
-                    pipeline={p}
-                    runId={runId}
+                    title={entryId(modalItem)}
+                    left={modalItem.baselineSha ? { url: imageUrl(casKey(modalItem.baselineSha)), label: 'baseline' } : null}
+                    right={modalItem.runSha ? { url: imageUrl(runImageKey(p, runId, modalItem.engine, modalItem.name)), label: 'this run' } : null}
                     diff={typeof diffs[entryId(modalItem)] === 'object' ? (diffs[entryId(modalItem)] as DiffResult) : null}
                     onClose={() => setModalItem(null)}
                 />

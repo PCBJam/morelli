@@ -69,6 +69,18 @@ export type BaselinesResponse = {
     entries: ManifestEntry[];
 };
 
+export type HistoryVersion = {
+    sha256: string;
+    bytes: number;
+    width: number;
+    height: number;
+    source?: EntrySource;
+    /** 'current' for the live manifest entry, else the history snapshot's stamp. */
+    snapshot: 'current' | string;
+};
+
+export type BaselineHistoryResponse = { id: string; versions: HistoryVersion[]; scannedSnapshots: number; truncated: boolean };
+
 export type BlobsResult = { ensured: number; existed: number; failures: Array<{ name: string; engine: string; error: string }> };
 
 export type CommitResult = { updated: number; added: number; pruned: number; unchangedSkipped: number; newEtag: string | null; wrote: boolean };
